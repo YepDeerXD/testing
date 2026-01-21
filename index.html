@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Donation Goal</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&display=swap');
+
+    body {
+      background: #1e1e1e;
+      margin: 0;
+      padding: 0;
+      font-family: 'Pixelify Sans', monospace;
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .goal-container {
+      text-align: center;
+      padding: 20px;
+    }
+
+    .goal-title {
+      font-size: 18px;
+      margin-bottom: 10px;
+      color: #ffa500;
+      text-shadow: 0 0 6px rgba(255, 165, 0, 0.7);
+    }
+
+    .hearts {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin: 10px 0;
+    }
+
+    .heart {
+      font-size: 28px;
+      opacity: 0.5;
+      transition: all 0.3s ease;
+    }
+
+    .heart.filled {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+
+    .heart.pulsing {
+      animation: pulse 1.2s infinite;
+    }
+
+    .heart.fullglow {
+      animation: glow 1.5s infinite alternate;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.25); }
+      100% { transform: scale(1); }
+    }
+
+    @keyframes glow {
+      0% { text-shadow: 0 0 5px white; }
+      100% { text-shadow: 0 0 20px white, 0 0 30px #ff5733; }
+    }
+
+    .progress-text {
+      font-size: 16px;
+      margin-top: 8px;
+    }
+
+    .status {
+      font-size: 14px;
+      opacity: 0.7;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="goal-container">
+    <div class="goal-title">На вкусняшки...</div>
+    <div class="hearts" id="hearts"></div>
+    <div class="progress-text" id="progress-text">Собрано: <span id="total">0</span> RUB</div>
+    <div class="status" id="status">Ждём донаты</div>
+  </div>
+
+  <!-- Socket.IO для WebSocket -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  
+  <script>
+    // === КОНФИГУРАЦИЯ ===
+    const DA_WIDGET_TOKEN = '8ybKSfF3hA3GW1rLj4Mn'; // ← ваш токен виджета
+    const GOAL_AMOUNT = 500; // цель в RUB
+    const GOAL_START_DATE = new Date('2026-01-21T00:00:00').getTime(); // дата начала гола
+
+    let totalRUB = 0;
+    const heartsContainer = document.getElementById('hearts');
+    const totalEl = document.getElementById('total');
+    const statusEl = document.getElementById('status');
+
+    // === ИНИЦИАЛИЗАЦИЯ СЕРДЕЧЕК ===
+    for (let i = 0; i < 5; i++) {
+      const h = document.createElement('div');
+      h.className = 'heart';
+      h.innerHTML = '❤️';
+      heartsContainer.appendChild(h);
+    }
+    const hearts = Array.from(document.querySelectorAll('.heart'));
+
+    // === ЗАГРУЗКА КУРСОВ ВАЛЮТ ===
+    let currencyRates = { RUB: 1, USD: 90, EUR: 100, TRY: 3, BRL: 15, PLN: 22 };
+    fetch('https://www.cbr-xml-daily.ru/daily_json.js')
+      .then(res => res.json())
+      .then(data => {
+        const v = data.Valute;
+        currencyRates.USD = v.USD.Value / v.USD.Nominal;
+        currencyRates.EUR = v.EUR.Value / v.EUR.Nominal;
+        currencyRates.TRY = v.TRY.Value / v.TRY.Nominal;
+        currencyRates.BRL = v.BRL.Value / v.BRL.Nominal;
+        currencyRates.PLN = v.PLN.Value / v.PLN.Nominal;
+        console.log('[DA] Курсы загружены:', currencyRates);
+      })
+      .catch(() => console.warn('[DA] Используем курсы по умолчанию'));
+
+    // === ПОДКЛЮЧЕНИЕ К WEBSOCKET ===
+    const socket = io("wss://socket.donationalerts.ru:443", { transports: ["websocket"] });
+    socket.emit('add-user', { token: DA_WIDGET_TOKEN, type: "alert_widget" });
+
+    socket.on('donation', function(msg) {
+      try {
+        const pars_msg = JSON.parse(msg);
+        const donationTime = new Date(pars_msg.created_at).getTime();
+        
+        // Игнорируем донаты до даты старта
+        if (donationTime < GOAL_START_DATE) return;
+
+        const amount = parseFloat(pars_msg.amount);
+        const currency = pars_msg.currency || 'RUB';
+        const rate = currencyRates[currency] || 1;
+        const rubAmount = amount * rate;
+
+        totalRUB += rubAmount;
+        updateProgress();
+        console.log(`[DA] +${amount} ${currency} → ${rubAmount.toFixed(2)} RUB`);
+      } catch (e) {
+        console.error('[DA] Ошибка обработки доната:', e);
+      }
+    });
+
+    // === ОБНОВЛЕНИЕ ПРОГРЕССА ===
+    function updateProgress() {
+      totalEl.textContent = Math.round(totalRUB);
+      const percent = Math.min(100, Math.round((totalRUB / GOAL_AMOUNT) * 100));
+      statusEl.textContent = `Прогресс: ${percent}%`;
+
+      let filledHearts = 0;
+      if (percent >= 75) filledHearts = 5;
+      else if (percent >= 50) filledHearts = 3;
+      else if (percent >= 25) filledHearts = 2;
+      else if (percent >= 1) filledHearts = 1;
+
+      // Сброс анимаций
+      hearts.forEach(h => {
+        h.className = 'heart';
+      });
+
+      // Заполнение сердец
+      for (let i = 0; i < filledHearts; i++) {
+        hearts[i].classList.add('filled');
+      }
+
+      // Анимации
+      if (filledHearts === 0) {
+        hearts.forEach(h => h.classList.add('pulsing'));
+      } else if (filledHearts < 5) {
+        hearts[filledHearts - 1].classList.add('pulsing');
+      } else {
+        hearts[4].classList.add('fullglow');
+      }
+    }
+  </script>
+</body>
+</html>
