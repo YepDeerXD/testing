@@ -1,1 +1,28 @@
-
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Callback</title>
+</head>
+<body>
+  <h1>Authorization Callback</h1>
+  <p>URL: <span id="url"></span></p>
+  <p>Code: <span id="code"></span></p>
+  
+  <script>
+    // Показываем полный URL
+    document.getElementById('url').textContent = window.location.href;
+    
+    // Извлекаем код из URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    
+    if (code) {
+      document.getElementById('code').textContent = code;
+      document.getElementById('code').style.color = 'green';
+    } else {
+      document.getElementById('code').textContent = 'Код не найден!';
+      document.getElementById('code').style.color = 'red';
+    }
+  </script>
+</body>
+</html>
